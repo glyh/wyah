@@ -1,0 +1,7 @@
+(menhir (modules menhir_parser))
+(ocamllex (modules lexer))
+
+(library
+ (name entry)
+ (preprocess (pps ppx_deriving.eq))
+ (libraries nice_parser linenoise))

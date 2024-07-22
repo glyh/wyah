@@ -1,0 +1,4 @@
+(executable
+ (public_name wyah)
+ (name main)
+ (libraries entry))
