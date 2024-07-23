@@ -15,6 +15,7 @@ depends: [
   "menhir"
   "nice_parser" {>= "1.0.0"}
   "ppx_deriving" {>= "6.0.2"}
+  "linenoise" {>= "1.5.1"}
   "odoc" {with-doc}
 ]
 build: [

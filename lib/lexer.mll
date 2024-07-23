@@ -19,6 +19,12 @@ let int_lit = '-'? ('0' | ['1'-'9']['0'-'9']*)
 rule next_token = parse
   | eof { EOF }
   | "true" { TRUE }
+  | "\\" { FSLASH }
+  | "." { DOT }
+  | ":" { COLON }
+  | "->" { RARROW }
+  | "Int" { T_INT }
+  | "Bool" { T_BOOL }
   | "false" { FALSE }
   | int_lit { INT (int_of_string (Lexing.lexeme lexbuf)) }
   | "if" { IF }

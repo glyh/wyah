@@ -11,6 +11,9 @@
 
 %token IF THEN ELSE
 %token LPAREN RPAREN
+%token FSLASH DOT COLON
+%token RARROW T_INT T_BOOL
+%right RARROW
 
 %token <string> IDENT 
 
@@ -19,7 +22,23 @@
 %%
 
 expr_eof:
-  | e=expr_stmt EOF { e }
+  | e=expr EOF { e }
+
+expr: 
+  | e=expr_lam { e } 
+
+type_sig:
+  | T_INT { TInt }
+  | T_BOOL { TBool }
+  | lhs=type_sig RARROW rhs=type_sig { TArrow(lhs, rhs) }
+  | LPAREN t=type_sig RPAREN { t }
+
+expr_lam:
+  | FSLASH id=IDENT COLON t=type_sig DOT body=expr_lam {
+    Val(Lam(id, t, body))
+  }
+  | e=expr_stmt { e }
+
 
 expr_stmt:
   | IF test=expr_stmt THEN then_clause=expr_stmt ELSE else_clause=expr_stmt {
@@ -41,6 +60,6 @@ expr_primary:
   | TRUE { Val(Bool true) }
   | FALSE { Val(Bool false) }
   | id=IDENT {
-    Ident(id)
+    Var(id)
   }
-  | LPAREN e=expr_stmt RPAREN { e }
+  | LPAREN e=expr RPAREN { e }
