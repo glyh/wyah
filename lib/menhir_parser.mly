@@ -6,13 +6,14 @@
 
 %token EOF
 
-%token TRUE FALSE
+%token TRUE FALSE UNIT
 %token <int> INT
+%token <char> CHAR
 
 %token IF THEN ELSE
 %token LPAREN RPAREN
 %token FSLASH DOT COLON
-%token RARROW T_INT T_BOOL
+%token RARROW T_INT T_BOOL T_CHAR T_IO
 %right RARROW
 
 %token <string> IDENT 
@@ -30,12 +31,15 @@ expr:
 type_sig:
   | T_INT { TInt }
   | T_BOOL { TBool }
+  | T_CHAR { TChar }
+  | UNIT { TUnit }
+  | T_IO inner=type_sig { TIO(inner) }
   | lhs=type_sig RARROW rhs=type_sig { TArrow(lhs, rhs) }
   | LPAREN t=type_sig RPAREN { t }
 
 expr_lam:
   | FSLASH id=IDENT COLON t=type_sig DOT body=expr_lam {
-    Val(Lam(id, t, body))
+    Lam(id, t, body)
   }
   | e=expr_stmt { e }
 
@@ -56,9 +60,11 @@ expr_expr:
   }
 
 expr_primary:
-  | i=INT { Val(Int i) }
-  | TRUE { Val(Bool true) }
-  | FALSE { Val(Bool false) }
+  | i=INT { Atom(Int i) }
+  | c=CHAR { Atom(Char c) }
+  | TRUE { Atom(Bool true) }
+  | FALSE { Atom(Bool false) }
+  | UNIT { Atom(Unit) }
   | id=IDENT {
     Var(id)
   }

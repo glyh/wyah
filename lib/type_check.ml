@@ -1,4 +1,5 @@
 open Ast
+open Environment
 
 exception TypeMisMatch of value_type * value_type
 exception NotCallable of value_type
@@ -6,18 +7,18 @@ exception MalformedAST of expr
 exception Unimplemented
 exception UnboundIdentifier of identifier
 
-module Env = Map.Make(String)
-type type_env = value_type Env.t
 let rec type_check (env: type_env) (ast: expr): value_type = 
   match ast with
-  | Val(Int _) -> TInt
-  | Val(Bool _) -> TBool
-  | Val(Lam(id, ty, body)) -> 
-    let env_new = Env.add id ty env in
+  | Atom(Int _) -> TInt
+  | Atom(Bool _) -> TBool
+  | Atom(Char _) -> TChar
+  | Atom(Unit) -> TUnit
+  | Lam(id, ty, body) -> 
+    let env_new = TypeEnv.add id ty env in
     let type_body = type_check env_new body in
     TArrow(ty, type_body)
   | Var(id) ->
-    begin match Env.find_opt id env with
+    begin match TypeEnv.find_opt id env with
     | Some(ty) -> ty
     | None -> raise (UnboundIdentifier id)
     end
@@ -39,7 +40,7 @@ let rec type_check (env: type_env) (ast: expr): value_type =
     let type_x = type_check env x in
     match type_f with
     | TArrow(t_lhs, t_rhs) -> 
-      if t_lhs == type_x 
+      if compare t_lhs type_x == 0
       then 
         t_rhs
       else

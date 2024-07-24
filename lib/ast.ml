@@ -1,21 +1,26 @@
 type value_type = 
+  | TUnit
   | TInt
   | TBool
+  | TChar
   | TArrow of value_type * value_type
+  | TIO of value_type
   [@@deriving eq]
 
 
 type identifier = string
   [@@deriving eq]
 
-type value = 
+type normalized = 
+  | Unit
   | Int of int
+  | Char of char
   | Bool of bool
-  | Lam of identifier * value_type * expr
   [@@deriving eq]
 
 and expr =
-  | Val of value
+  | Atom of normalized
+  | Lam of identifier * value_type * expr
   | Var of identifier
   | If of expr * expr * expr
   | App of expr * expr
@@ -25,6 +30,9 @@ let rec pretty_print_type (v: value_type) =
   match v with
   | TInt -> "Int"
   | TBool -> "Bool"
+  | TChar -> "Char"
+  | TIO inner -> "IO " ^ pretty_print_type inner 
+  | TUnit -> "()"
   | TArrow(lhs, rhs) -> 
       begin match lhs with
       | TArrow _ ->
@@ -32,9 +40,3 @@ let rec pretty_print_type (v: value_type) =
       | _ -> 
          (pretty_print_type lhs) ^ " -> " ^ (pretty_print_type rhs) 
       end
-
-let pretty_print_value (v: value) =
-  match v with
-  | Int(i) -> string_of_int i
-  | Bool(b) -> string_of_bool b
-  | Lam(_) -> "<<closure>>"

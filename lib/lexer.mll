@@ -15,18 +15,29 @@ let newline = "\r\n" | '\r' | '\n'
 let id = ['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
 
 let int_lit = '-'? ('0' | ['1'-'9']['0'-'9']*)
+let char_lit = "'" (_ # ['\'' '\\']) "'" | "'\\" ['\'' '\\'] "'"
 
 rule next_token = parse
   | eof { EOF }
-  | "true" { TRUE }
   | "\\" { FSLASH }
   | "." { DOT }
   | ":" { COLON }
-  | "->" { RARROW }
+
   | "Int" { T_INT }
   | "Bool" { T_BOOL }
+  | "Char" { T_CHAR }
+  | "IO" { T_IO }
+  | "->" { RARROW }
+
+  | "()" { UNIT }
+  | "true" { TRUE }
   | "false" { FALSE }
   | int_lit { INT (int_of_string (Lexing.lexeme lexbuf)) }
+  | char_lit { 
+    let token = (Lexing.lexeme lexbuf) in
+    let char_index = (String.length token) - 2 in
+    CHAR (String.get token char_index)
+  }
   | "if" { IF }
   | "then" { THEN }
   | "else" { ELSE }

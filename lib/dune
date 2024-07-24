@@ -4,4 +4,4 @@
 (library
  (name entry)
  (preprocess (pps ppx_deriving.eq))
- (libraries nice_parser linenoise))
+ (libraries nice_parser linenoise unix))
