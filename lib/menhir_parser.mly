@@ -55,11 +55,23 @@ expr_lam:
   | FSLASH id=IDENT RARROW body=expr_lam {
     Lam(id, body)
   }
-  | LET id=IDENT ASSIGN id_rhs=expr_lam IN inner=expr_lam {
-    LetIn(id, id_rhs, inner)
+  | LET id=IDENT params=list(IDENT) ASSIGN rhs=expr_lam IN inner=expr_lam {
+    let rhs_wrapped = 
+      List.fold_right
+      (fun id inner -> Lam(id, inner)) 
+      params
+      rhs
+    in
+    LetIn(id, rhs_wrapped, inner)
   }
-  | LET REC id=IDENT ASSIGN id_rhs=expr_lam IN inner=expr_lam {
-    LetIn(id, Fix(Lam(id, id_rhs)), inner)
+  | LET REC id=IDENT params=list(IDENT) ASSIGN rhs=expr_lam IN inner=expr_lam {
+    let rhs_wrapped = 
+      List.fold_right
+      (fun id inner -> Lam(id, inner)) 
+      params
+      rhs
+    in
+    LetIn(id, Fix(Lam(id, rhs_wrapped)), inner)
   }
   | e=expr_stmt { e }
 
