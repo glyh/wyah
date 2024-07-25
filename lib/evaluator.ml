@@ -34,8 +34,10 @@ and evaluate (env: eval_env) (ast: expr): value =
     end
   | Lam(arg, body) ->
     Closure (make_thunk env arg body)
+  | Fix(f) ->
+      evaluate env (App(f, Fix(f)))
   | LetIn(id, exp_let, exp_inner) ->
-      evaluate env (App(Lam(id, exp_let), exp_inner))
+      evaluate env (App(Lam(id, exp_inner), exp_let))
   | If(cond, then_clause, else_clause) ->
       begin match (evaluate env cond) with
       | Norm(Bool(cond)) ->

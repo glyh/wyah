@@ -21,6 +21,8 @@ rule next_token = parse
   | eof { EOF }
   | "\\" { FSLASH }
   | "let" { LET }
+  | "rec" { REC }
+  | "==" { EQ }
   | "=" { ASSIGN }
   | "in" { IN }
   (*| "." { DOT }*)
@@ -31,6 +33,8 @@ rule next_token = parse
   (*| "Char" { T_CHAR }*)
   (*| "IO" { T_IO }*)
   | "->" { RARROW }
+  | "-" { SUB }
+  | "+" { ADD }
 
   | "()" { UNIT }
   | "True" { TRUE }

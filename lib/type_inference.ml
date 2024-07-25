@@ -15,12 +15,6 @@ type type_constraint = wyah_type * wyah_type
 
 exception UnificationFailure of type_constraint
 
-let gen_tvar =
-  let uid = ref 0 in
-  fun () -> 
-    uid := !uid + 1;
-    TVar !uid
-
 let rec free_variables (scheme: wyah_type): type_var_set = 
   match scheme with
   | TForall(vars, inner) -> TypeVarSet.diff (free_variables inner) vars
@@ -59,7 +53,7 @@ let instantiate (scheme: wyah_type): wyah_type =
       let vars_pair = 
         vars
         |> TypeVarSet.to_seq
-        |> Seq.map (fun v -> (v, gen_tvar ()))
+        |> Seq.map (fun v -> (v, TVar (gen_tvar ())))
         |> MapSubs.of_seq
       in
         sub_one_recursive vars_pair inner
@@ -144,17 +138,26 @@ and inference_constraints (tenv: type_env) (exp: expr): (wyah_type * type_constr
   | Atom(Int _) -> (t_int, [])
   | Atom(Char _) -> (t_char, [])
   | Atom(Bool _) -> (t_bool, [])
+
   | LetIn(var, var_exp, inner) ->
       let (var_exp_ty, var_exp_cons) = inference_constraints tenv var_exp in
       let env_generalized = generalize var_exp_cons tenv var var_exp_ty in
       inference_constraints env_generalized inner
+
+  | Fix(lam) ->
+      let f_gen = TVar (gen_tvar ()) in
+      let wrapped_gen = TVar (gen_tvar ()) in
+      let (lam_ty, lam_cons) = inference_constraints tenv lam in
+      f_gen, (lam_ty, TArrow(wrapped_gen, f_gen)) :: lam_cons
+
   | Var(var) -> 
       begin match TypeEnv.find_opt var tenv with
       | None -> raise (UndefinedVariable(var))
       | Some(scheme) -> (instantiate(scheme), [])
       end
+
   | Lam(var, body) -> 
-      let var_gen = gen_tvar () in
+      let var_gen = TVar (gen_tvar ()) in
       let tenv_new = 
         TypeEnv.add var var_gen tenv
       in
@@ -162,15 +165,17 @@ and inference_constraints (tenv: type_env) (exp: expr): (wyah_type * type_constr
         inference_constraints tenv_new body
       in
       (TArrow(var_gen, body_type), constraints)
+
   | If(cond, then_clause, else_clause) ->
       let (cond_ty, cond_cons) = inference_constraints tenv cond in
       let (then_ty, then_cons) = inference_constraints tenv then_clause in
       let (else_ty, else_cons) = inference_constraints tenv else_clause in
       (then_ty, [(cond_ty, t_bool); (then_ty, else_ty)] @ cond_cons @ then_cons @ else_cons)
+
   | App(f, x) ->
       let (f_ty, f_cons) = inference_constraints tenv f in
       let (x_ty, x_cons) = inference_constraints tenv x in
-      let var_gen = gen_tvar () in
+      let var_gen = TVar (gen_tvar ()) in
       (var_gen, [(f_ty, TArrow(x_ty, var_gen))] @ f_cons @ x_cons)
 
 let show_cons ((tlhs, trhs): type_constraint): string = 

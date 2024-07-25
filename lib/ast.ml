@@ -15,6 +15,7 @@ type atom =
 and expr =
   | Atom of atom
   | Lam of identifier * expr
+  | Fix of expr
   | LetIn of identifier * expr * expr
   | Var of identifier
   | If of expr * expr * expr

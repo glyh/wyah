@@ -11,11 +11,15 @@
 %token <int> INT
 %token <char> CHAR
 
+%token ADD SUB EQ
+%left EQ
+%left ADD SUB
+
 %token IF THEN ELSE
 %token LPAREN RPAREN
 %token FSLASH (*DOT COLON*)
 %token RARROW (*T_INT T_BOOL T_CHAR T_IO*)
-%token LET ASSIGN IN
+%token LET REC ASSIGN IN
 
 %token <string> IDENT 
 
@@ -54,6 +58,9 @@ expr_lam:
   | LET id=IDENT ASSIGN id_rhs=expr_lam IN inner=expr_lam {
     LetIn(id, id_rhs, inner)
   }
+  | LET REC id=IDENT ASSIGN id_rhs=expr_lam IN inner=expr_lam {
+    LetIn(id, Fix(Lam(id, id_rhs)), inner)
+  }
   | e=expr_stmt { e }
 
 
@@ -64,7 +71,18 @@ expr_stmt:
   | e=expr_expr { e }
 
 
+%inline bin_op:
+  | ADD { "+" }
+  | SUB { "-" }
+  | EQ { "==" }
+  
 expr_expr: 
+  | lhs=expr_expr op=bin_op rhs=expr_expr {
+    App(App(Var op, lhs), rhs)
+  }
+  | e=expr_app { e }
+
+expr_app: 
   | f=expr_primary xs=list(expr_primary) {
     List.fold_left 
     (fun partial arg -> App(partial, arg))

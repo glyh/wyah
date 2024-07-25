@@ -58,8 +58,31 @@ let get_char (ch: value): value =
 module EvalEnv = Map.Make(String)
 type eval_env = thunk_wrap EvalEnv.t
 
+let add_int (lhs: value) (rhs: value): value = 
+  match lhs, rhs with
+  | Norm(Int(i)), Norm(Int(j)) -> Norm(Int(i + j))
+  | _ -> raise Unreachable
+
+let sub_int (lhs: value) (rhs: value): value = 
+  match lhs, rhs with
+  | Norm(Int(i)), Norm(Int(j)) -> Norm(Int(i - j))
+  | _ -> raise Unreachable
+
+let equal_value (lhs: value) (rhs: value): value =
+  match lhs, rhs with
+  | Norm(a), Norm(b) ->
+      Norm(Bool(compare a b == 0))
+  | _ -> raise Unreachable
+
+let ty_equal_value = 
+  let a = gen_tvar () in 
+    TForall((TypeVarSet.singleton a), TArrow(TVar a, TArrow(TVar a, t_bool)))
+
 let env_init = 
   [
+    "+", wrap_binary add_int, TArrow(t_int, TArrow(t_int, t_int));
+    "==", wrap_binary equal_value, ty_equal_value;
+    "-", wrap_binary sub_int, TArrow(t_int, TArrow(t_int, t_int));
     "putChar", wrap_unary put_char, TArrow(t_char, TIO t_unit);
     "getChar", wrap_unary get_char, TArrow(t_unit, TIO t_char);
     (*

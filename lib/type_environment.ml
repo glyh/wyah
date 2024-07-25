@@ -31,3 +31,9 @@ module TypeEnv = Map.Make(struct
 end)
 type type_env = wyah_type TypeEnv.t
 
+let gen_tvar =
+  let uid = ref 0 in
+  fun () -> 
+    uid := !uid + 1;
+    !uid
+
