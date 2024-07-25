@@ -1,17 +1,11 @@
-type value_type = 
-  | TUnit
-  | TInt
-  | TBool
-  | TChar
-  | TArrow of value_type * value_type
-  | TIO of value_type
-  [@@deriving eq]
+open Type_environment
 
+exception Unreachable
 
 type identifier = string
   [@@deriving eq]
 
-type normalized = 
+type atom = 
   | Unit
   | Int of int
   | Char of char
@@ -19,20 +13,26 @@ type normalized =
   [@@deriving eq]
 
 and expr =
-  | Atom of normalized
-  | Lam of identifier * value_type * expr
+  | Atom of atom
+  | Lam of identifier * expr
+  | LetIn of identifier * expr * expr
   | Var of identifier
   | If of expr * expr * expr
   | App of expr * expr
   [@@deriving eq]
 
-let rec pretty_print_type (v: value_type) =
+let pretty_print_var_set (s: type_var_set) =
+  s
+  |> TypeVarSet.to_seq
+  |> List.of_seq
+  |> List.map string_of_int
+  |> String.concat " "
+
+let rec pretty_print_type (v: wyah_type) =
   match v with
-  | TInt -> "Int"
-  | TBool -> "Bool"
-  | TChar -> "Char"
+  | TVar v -> string_of_int v
+  | TCon ty -> ty
   | TIO inner -> "IO " ^ pretty_print_type inner 
-  | TUnit -> "()"
   | TArrow(lhs, rhs) -> 
       begin match lhs with
       | TArrow _ ->
@@ -40,3 +40,4 @@ let rec pretty_print_type (v: value_type) =
       | _ -> 
          (pretty_print_type lhs) ^ " -> " ^ (pretty_print_type rhs) 
       end
+  | TForall(vars, inner) -> pretty_print_var_set vars ^ " . " ^ pretty_print_type inner

@@ -32,8 +32,10 @@ and evaluate (env: eval_env) (ast: expr): value =
     | Closure c -> c (true, ref (fun () -> evaluate env x))
     | _ -> raise Unreachable
     end
-  | Lam(arg, _, body) ->
+  | Lam(arg, body) ->
     Closure (make_thunk env arg body)
+  | LetIn(id, exp_let, exp_inner) ->
+      evaluate env (App(Lam(id, exp_let), exp_inner))
   | If(cond, then_clause, else_clause) ->
       begin match (evaluate env cond) with
       | Norm(Bool(cond)) ->

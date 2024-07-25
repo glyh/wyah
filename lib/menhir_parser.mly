@@ -1,6 +1,7 @@
 %{
   [@@@coverage exclude_file]
   open Ast
+  (*open Type_environment*)
 
 %}
 
@@ -12,9 +13,9 @@
 
 %token IF THEN ELSE
 %token LPAREN RPAREN
-%token FSLASH DOT COLON
-%token RARROW T_INT T_BOOL T_CHAR T_IO
-%right RARROW
+%token FSLASH (*DOT COLON*)
+%token RARROW (*T_INT T_BOOL T_CHAR T_IO*)
+%token LET ASSIGN IN
 
 %token <string> IDENT 
 
@@ -28,18 +29,30 @@ expr_eof:
 expr: 
   | e=expr_lam { e } 
 
-type_sig:
-  | T_INT { TInt }
-  | T_BOOL { TBool }
-  | T_CHAR { TChar }
-  | UNIT { TUnit }
-  | T_IO inner=type_sig { TIO(inner) }
-  | lhs=type_sig RARROW rhs=type_sig { TArrow(lhs, rhs) }
-  | LPAREN t=type_sig RPAREN { t }
+(*type_sig:*)
+(*  | t=type_sig_arrow { t }*)
+(**)
+(*type_sig_arrow:*)
+(*  | lhs=type_sig_monad RARROW rhs=type_sig_arrow { TArrow(lhs, rhs) }*)
+(*  | t=type_sig_monad { t }*)
+(**)
+(*type_sig_monad:*)
+(*  | T_IO inner=type_sig_primary { TIO(inner) }*)
+(*  | t=type_sig_primary { t }*)
+(**)
+(*type_sig_primary:*)
+(*  | T_INT { t_int }*)
+(*  | T_BOOL { t_bool }*)
+(*  | T_CHAR { t_char }*)
+(*  | UNIT { t_unit }*)
+(*  | LPAREN t=type_sig RPAREN { t }*)
 
 expr_lam:
-  | FSLASH id=IDENT COLON t=type_sig DOT body=expr_lam {
-    Lam(id, t, body)
+  | FSLASH id=IDENT RARROW body=expr_lam {
+    Lam(id, body)
+  }
+  | LET id=IDENT ASSIGN id_rhs=expr_lam IN inner=expr_lam {
+    LetIn(id, id_rhs, inner)
   }
   | e=expr_stmt { e }
 

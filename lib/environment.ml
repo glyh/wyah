@@ -1,12 +1,14 @@
 open Ast
+open Type_environment
 
 exception Unreachable
 
+(* Reference: https://github.com/fetburner/Lazy/blob/master/Value.sml *)
 type thunk = unit -> value
 (* The boolean indicates whether the thunk is forcable *)
 and thunk_wrap = bool * thunk ref
 and value = 
-  | Norm of normalized
+  | Norm of atom
   | Closure of (thunk_wrap -> value)
 
 let force (thw: thunk_wrap) : value = 
@@ -56,13 +58,10 @@ let get_char (ch: value): value =
 module EvalEnv = Map.Make(String)
 type eval_env = thunk_wrap EvalEnv.t
 
-module TypeEnv = Map.Make(String)
-type type_env = value_type TypeEnv.t
-
 let env_init = 
   [
-    "putChar", wrap_unary put_char, TArrow(TChar, TIO TUnit);
-    "getChar", wrap_unary get_char, TArrow(TUnit, TIO TChar);
+    "putChar", wrap_unary put_char, TArrow(t_char, TIO t_unit);
+    "getChar", wrap_unary get_char, TArrow(t_unit, TIO t_char);
     (*
       NOTE: bindIO, thenIO and returnIO can't be integrated for now as we don't have a 
       way to deal with parametric polymorphism

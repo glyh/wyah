@@ -20,18 +20,21 @@ let char_lit = "'" (_ # ['\'' '\\']) "'" | "'\\" ['\'' '\\'] "'"
 rule next_token = parse
   | eof { EOF }
   | "\\" { FSLASH }
-  | "." { DOT }
-  | ":" { COLON }
+  | "let" { LET }
+  | "=" { ASSIGN }
+  | "in" { IN }
+  (*| "." { DOT }*)
+  (*| ":" { COLON }*)
 
-  | "Int" { T_INT }
-  | "Bool" { T_BOOL }
-  | "Char" { T_CHAR }
-  | "IO" { T_IO }
+  (*| "Int" { T_INT }*)
+  (*| "Bool" { T_BOOL }*)
+  (*| "Char" { T_CHAR }*)
+  (*| "IO" { T_IO }*)
   | "->" { RARROW }
 
   | "()" { UNIT }
-  | "true" { TRUE }
-  | "false" { FALSE }
+  | "True" { TRUE }
+  | "False" { FALSE }
   | int_lit { INT (int_of_string (Lexing.lexeme lexbuf)) }
   | char_lit { 
     let token = (Lexing.lexeme lexbuf) in
