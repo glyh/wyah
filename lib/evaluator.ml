@@ -17,7 +17,7 @@ let pretty_print_value (v: value) =
   | Norm(Char(c)) -> char_escape c
   | Closure(_) -> "<<closure>>"
 
-let rec make_thunk (env: eval_env) (id: identifier) (body: expr) : (thunk_wrap -> value) = 
+let rec make_thunk (env: eval_env) (id: identifier) (body: expr) : (thunk ref -> value) = 
   fun th ->
     let env_new = EvalEnv.add id th env in
     evaluate env_new body
@@ -29,7 +29,7 @@ and evaluate (env: eval_env) (ast: expr): value =
       force (EvalEnv.find name env)
   | App(f, x) ->
     begin match evaluate env f with
-    | Closure c -> c (true, ref (fun () -> evaluate env x))
+    | Closure c -> c (ref (fun () -> evaluate env x))
     | _ -> raise Unreachable
     end
   | Lam(arg, body) ->

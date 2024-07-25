@@ -193,6 +193,7 @@ let inference_type (tenv: type_env) (exp: expr): wyah_type =
   let (exp_ty, cons) = inference_constraints tenv exp in
   let sub = unify cons in 
   let type_sub = apply_sub_ty sub exp_ty in
-  if compare (free_variables type_sub) TypeVarSet.empty != 0
-  then raise (NotEnoughConstraint(type_sub))
-  else type_sub
+  let rest_fvs = (free_variables type_sub) in
+  if compare rest_fvs TypeVarSet.empty == 0
+  then type_sub
+  else TForall (rest_fvs, type_sub)

@@ -5,34 +5,27 @@ exception Unreachable
 
 (* Reference: https://github.com/fetburner/Lazy/blob/master/Value.sml *)
 type thunk = unit -> value
-(* The boolean indicates whether the thunk is forcable *)
-and thunk_wrap = bool * thunk ref
 and value = 
   | Norm of atom
-  | Closure of (thunk_wrap -> value)
+  | Closure of (thunk ref -> value)
 
-let force (thw: thunk_wrap) : value = 
-  let (forcable, th) = thw in
+let force (th: thunk ref) : value = 
   let ret = !th () in
-    if forcable then
-      th := (fun () -> ret)
-    else 
-      ()
-    ;
+    th := (fun () -> ret);
     ret
 
-let wrap_unary (f: value -> value) : thunk_wrap = 
-  (false, ref (fun () -> Closure (fun th1 ->
+let wrap_unary (f: value -> value) : thunk ref = 
+  ref (fun () -> Closure (fun th1 ->
     let v1 = th1 |> force in
     f v1
-  )))
+  ))
 
-let wrap_binary (f: value -> value -> value) : thunk_wrap =
-  (false, ref (fun () -> Closure (fun th1 -> Closure (fun th2 -> 
+let wrap_binary (f: value -> value -> value) : thunk ref =
+  ref (fun () -> Closure (fun th1 -> Closure (fun th2 -> 
     let v1 = th1 |> force in
     let v2 = th2 |> force in
     f v1 v2
-  ))))
+  )))
 
 
 let put_char (ch: value): value = 
@@ -56,7 +49,7 @@ let get_char (ch: value): value =
   | _ -> raise Unreachable
 
 module EvalEnv = Map.Make(String)
-type eval_env = thunk_wrap EvalEnv.t
+type eval_env = thunk ref EvalEnv.t
 
 let add_int (lhs: value) (rhs: value): value = 
   match lhs, rhs with

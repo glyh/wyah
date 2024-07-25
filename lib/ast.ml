@@ -22,6 +22,12 @@ and expr =
   | App of expr * expr
   [@@deriving eq]
 
+type definition = identifier * expr
+
+type top_level = 
+  | Expr of expr
+  | Definition of definition
+
 let pretty_print_var_set (s: type_var_set) =
   s
   |> TypeVarSet.to_seq

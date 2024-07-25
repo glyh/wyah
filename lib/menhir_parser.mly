@@ -23,12 +23,20 @@
 
 %token <string> IDENT 
 
-%start <expr> expr_eof
+%start <top_level> toplevel_eof
 
 %%
 
-expr_eof:
-  | e=expr EOF { e }
+toplevel_eof:
+  | e=expr EOF { Expr e }
+  | d=definition EOF { Definition d }
+
+definition: 
+  | id_lam=let_lambda {
+    let (id, lam) = id_lam in
+    (id, lam) 
+  }
+  | name=IDENT ASSIGN e=expr { (name, e) }
 
 expr: 
   | e=expr_lam { e } 
@@ -51,27 +59,41 @@ expr:
 (*  | UNIT { t_unit }*)
 (*  | LPAREN t=type_sig RPAREN { t }*)
 
+let_syntax:
+  | LET id=IDENT params=list(IDENT) ASSIGN {
+    (id, params, false)
+  }
+  | LET REC id=IDENT params=list(IDENT) ASSIGN {
+    (id, params, true)
+  }
+
+let_lambda:
+  | ls=let_syntax rhs=expr_lam {
+    let (id, params, is_recursive) = ls in
+    let rhs_wrapped = 
+      List.fold_right
+      (fun p inner -> Lam(p, inner)) 
+      params
+      rhs
+    in
+    if is_recursive
+    then
+      (id, Fix(Lam(id, rhs_wrapped)))
+    else
+      (id, rhs_wrapped)
+  }
+
+
 expr_lam:
-  | FSLASH id=IDENT RARROW body=expr_lam {
-    Lam(id, body)
+  | FSLASH param=IDENT params=list(IDENT) RARROW body=expr_lam {
+    List.fold_right
+    (fun p inner -> Lam(p, inner))
+    (param :: params)
+    body
   }
-  | LET id=IDENT params=list(IDENT) ASSIGN rhs=expr_lam IN inner=expr_lam {
-    let rhs_wrapped = 
-      List.fold_right
-      (fun id inner -> Lam(id, inner)) 
-      params
-      rhs
-    in
-    LetIn(id, rhs_wrapped, inner)
-  }
-  | LET REC id=IDENT params=list(IDENT) ASSIGN rhs=expr_lam IN inner=expr_lam {
-    let rhs_wrapped = 
-      List.fold_right
-      (fun id inner -> Lam(id, inner)) 
-      params
-      rhs
-    in
-    LetIn(id, Fix(Lam(id, rhs_wrapped)), inner)
+  | id_lam=let_lambda IN inner=expr_lam {
+    let (id, lam) = id_lam in
+      LetIn(id, lam, inner)
   }
   | e=expr_stmt { e }
 
