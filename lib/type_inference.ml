@@ -35,17 +35,20 @@ module MapSubs = Map.Make(struct
 end)
 type subst = wyah_type MapSubs.t
 
-let rec sub_one_recursive (m: subst) (inner_ty: wyah_type): wyah_type =
-  match inner_ty with
-  | TVar(v) ->
-      begin match MapSubs.find_opt v m with
+let rec apply_sub_ty (s: subst) (ty: wyah_type): wyah_type = 
+  match ty with
+  | TForall(vs, inner) -> TForall(vs, apply_sub_ty s inner)
+  | TVar(v) -> 
+      begin match MapSubs.find_opt v s with
+      | Some(to_sub) -> to_sub
       | None -> TVar(v)
-      | Some(w) -> w
       end
-  | TForall(vs, inner) -> TForall(vs, sub_one_recursive m inner) 
-  | TArrow(lhs, rhs) -> TArrow(sub_one_recursive m lhs, sub_one_recursive m rhs)
-  | TIO(inner) -> TIO(sub_one_recursive m inner)
+  | TArrow(lhs, rhs) ->
+      TArrow(apply_sub_ty s lhs, apply_sub_ty s rhs)
+  | TIO inner ->
+      TIO(apply_sub_ty s inner)
   | t -> t
+
 
 let instantiate (scheme: wyah_type): wyah_type = 
   match scheme with
@@ -56,7 +59,7 @@ let instantiate (scheme: wyah_type): wyah_type =
         |> Seq.map (fun v -> (v, TVar (gen_tvar ())))
         |> MapSubs.of_seq
       in
-        sub_one_recursive vars_pair inner
+        apply_sub_ty vars_pair inner
   | t -> t
 
 let rec unify_one (c: type_constraint): (tvar * wyah_type) option * type_constraint list =
@@ -88,20 +91,6 @@ let rec unify_one (c: type_constraint): (tvar * wyah_type) option * type_constra
       unify_one (lhs, rhs)
   | _ ->
         raise (UnificationFailure (c))
-
-let rec apply_sub_ty (s: subst) (ty: wyah_type): wyah_type = 
-  match ty with
-  | TForall(vs, inner) -> TForall(vs, apply_sub_ty s inner)
-  | TVar(v) -> 
-      begin match MapSubs.find_opt v s with
-      | Some(to_sub) -> to_sub
-      | None -> TVar(v)
-      end
-  | TArrow(lhs, rhs) ->
-      TArrow(apply_sub_ty s lhs, apply_sub_ty s rhs)
-  | TIO inner ->
-      TIO(apply_sub_ty s inner)
-  | t -> t
 
 let apply_sub_sub (s_applied: subst) (s_target: subst): subst = 
   s_target
