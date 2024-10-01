@@ -72,12 +72,6 @@ let rec unify_one (c: type_constraint): (tvar * wyah_type) option * type_constra
         unify_one (inner1, inner2)
       else
         raise (UnificationFailure c)
-  | (TCon lhs, TCon rhs) ->
-      if lhs == rhs
-      then
-        None, []
-      else
-        raise (UnificationFailure (c))
   | (TVar v, ty) | (ty, TVar v) ->
       let fvs_rhs = free_variables ty in
       if TypeVarSet.mem v fvs_rhs
@@ -112,7 +106,7 @@ let rec unify (cs: type_constraint list): subst =
     | None, cs_new -> unify (cs_new @ cs)
     end
 
-let rec generalize (cs: type_constraint list) (env: type_env) (var: identifier) (ty: wyah_type): type_env = 
+let generalize (cs: type_constraint list) (env: type_env) (var: identifier) (ty: wyah_type): type_env = 
   let sub_solved = unify cs in
   let env_new = apply_sub_env sub_solved env in
   let fv_env_new = free_variables_env env_new in
@@ -121,7 +115,8 @@ let rec generalize (cs: type_constraint list) (env: type_env) (var: identifier) 
   let vars_to_generalize = TypeVarSet.diff fv_ty_new fv_env_new in
   let ty_generalized = TForall(vars_to_generalize, ty_new) in
   TypeEnv.add var ty_generalized env_new
-and inference_constraints (tenv: type_env) (exp: expr): (wyah_type * type_constraint list) = 
+
+let rec inference_constraints (tenv: type_env) (exp: expr): (wyah_type * type_constraint list) = 
   match exp with
   | Atom(Unit) -> (t_unit, [])
   | Atom(Int _) -> (t_int, [])
