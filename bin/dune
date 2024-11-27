@@ -1,4 +1,4 @@
 (executable
  (public_name wyah)
  (name main)
- (libraries entry))
+ (libraries wyah_compile linenoise))
