@@ -28,7 +28,8 @@
    (nice_parser (>= 1.0.0))
    (ppx_deriving (>= 6.0.2))
    (linenoise (>= 1.5.1))
-   (alcotest (>= 1.8.0)))
+   (alcotest (>= 1.8.0))
+   (batteries (>= 3.8.0)))
           
  (tags
   (topics haskell compiler)))

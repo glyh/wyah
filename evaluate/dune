@@ -1,0 +1,4 @@
+(library
+ (name evaluate)
+ (preprocess (pps ppx_deriving.eq))
+ (libraries unix frontend typecheck))
