@@ -10,8 +10,6 @@ exception NumAppliedAsFunc
 exception NonApOnStack
 exception ArgsNotEnough
 exception UndefinedVariable of string
-exception CantInstantiateCase
-exception RelocateVariable of string
 
 type addr = int
 
@@ -61,14 +59,18 @@ let compile program =
   let stack = [ address_of_main ] in
   { stack; dump = (); heap; globals; stats = { steps = 0 } }
 
-let is_data (node : node) = match node with NNum _ -> true | _ -> false
+let rec is_data (heap : heap) (node : node) =
+  match node with
+  | NNum _ -> true
+  | NInd addr -> BatDynArray.get heap addr |> is_data heap
+  | _ -> false
 
 let is_final_state (state : ti_state) =
   match state.stack with
   | [] -> raise EmptyStack
   | [ addr ] ->
       let node = BatDynArray.get state.heap addr in
-      is_data node
+      is_data state.heap node
   | _ -> false
 
 let rec list_last_opt lst =
@@ -165,7 +167,8 @@ let rec instantiate ?(addr = None) (body : core_expr) heap (env : env) =
           match addr with
           | None -> addr_already
           | Some addr ->
-              if addr != addr_already then raise (RelocateVariable name)
+              if addr != addr_already then
+                heap_alloc heap (NInd addr_already) ~addr:(Some addr)
               else addr))
   | Constr _ -> raise Unimplemented
   | Let { recursive = false; bindings; body } ->
@@ -189,7 +192,7 @@ let rec instantiate ?(addr = None) (body : core_expr) heap (env : env) =
              instantiate exp heap env_preallocated ~addr:pre_allocated_addr
              |> ignore);
       instantiate body heap env_preallocated ~addr
-  | Case _ -> raise CantInstantiateCase
+  | Case _ -> raise Unimplemented
   | Prim _ -> raise Unimplemented
   | Lam _ -> raise Unimplemented
 
@@ -235,9 +238,12 @@ let step_aux (options : step_options) (state : ti_state) =
             let env, stack_left, addr_app_root =
               get_args stack_hd arg_names state.heap stack_rest state.globals
             in
-            let result_addr = instantiate body state.heap env in
-            if options.redirect then
-              BatDynArray.set state.heap addr_app_root (NInd result_addr);
+            let preset_alloc_dest =
+              if options.redirect then Some addr_app_root else None
+            in
+            let result_addr =
+              instantiate body state.heap env ~addr:preset_alloc_dest
+            in
             { state with stack = result_addr :: stack_left }
         | NAp (f, _) -> { state with stack = f :: stack_hd :: stack_rest }
         | NNum _ -> raise NumAppliedAsFunc

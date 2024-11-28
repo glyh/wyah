@@ -6,10 +6,14 @@ exception NotValOnStack
 let take_result state =
   match state.stack with
   | [] -> raise EmptyStack
-  | [ addr ] -> (
-      match BatDynArray.get state.heap addr with
-      | NNum i -> i
-      | _ -> raise NotValOnStack)
+  | [ addr ] ->
+      let rec resolve_addr addr =
+        match BatDynArray.get state.heap addr with
+        | NNum i -> i
+        | NInd addr -> resolve_addr addr
+        | _ -> raise NotValOnStack
+      in
+      resolve_addr addr
   | _ -> raise StackTooMany
 
 let test_ti code = code |> compile |> eval |> take_result
@@ -39,8 +43,8 @@ let%test "2.13" =
   let source = {| 
 main = twice twice twice I 3;
   |} in
-  let stats = test_stats_opts { debug = false; redirect = true } source in
-  Printf.printf "Running 2.13 on Mark 2 takes %d steps\n" stats.steps;
   let stats = test_stats_opts { debug = false; redirect = false } source in
   Printf.printf "Running 2.13 on Mark 1 takes %d steps\n" stats.steps;
+  let stats = test_stats_opts { debug = false; redirect = true } source in
+  Printf.printf "Running 2.13 on Mark 2 takes %d steps\n" stats.steps;
   true
