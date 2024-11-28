@@ -1,3 +1,5 @@
 (library
- (name core_backend)
- (libraries batteries))
+ (name core)
+ (inline_tests)
+ (libraries batteries core_frontend)
+ (preprocess (pps ppx_inline_test)))
