@@ -30,3 +30,7 @@ f x y =
 main = f 3 4;
 |}
   = 4
+
+let%test "2.13" = test_ti {|
+main = twice twice twice I 3;
+|} = 3

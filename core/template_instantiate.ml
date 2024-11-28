@@ -19,6 +19,7 @@ type node =
   | NAp of addr * addr
   | NSupercomb of name * name list * core_expr
   | NNum of int
+  | NInd of addr
 
 type ti_stats = { steps : int }
 type heap = node BatDynArray.t
@@ -70,21 +71,38 @@ let is_final_state (state : ti_state) =
       is_data node
   | _ -> false
 
-let get_args (arg_names : name list) (heap : heap) (stack_rest : addr list)
-    (globals : env) : env * addr list =
+let rec list_last_opt lst =
+  match lst with [ e ] -> Some e | [] -> None | _ :: es -> list_last_opt es
+
+let get_args (fun_node : addr) (arg_names : name list) (heap : heap)
+    (stack_rest : addr list) (globals : env) : env * addr list * addr =
   let stack_left = ref stack_rest in
   let collect_arg globals arg_name =
     match !stack_left with
     | [] -> raise ArgsNotEnough
-    | addr :: rest -> (
-        match BatDynArray.get heap addr with
-        | NAp (_, arg) ->
-            stack_left := rest;
-            StringMap.add arg_name arg globals
-        | _ -> raise NonApOnStack)
+    | addr :: rest ->
+        let env_new =
+          let rec dispatch addr =
+            let node = BatDynArray.get heap addr in
+            match node with
+            | NAp (_, arg) ->
+                stack_left := rest;
+                StringMap.add arg_name arg globals
+            | NInd addr -> dispatch addr
+            | _ -> raise NonApOnStack
+          in
+          dispatch addr
+        in
+        (env_new, addr)
   in
-  let globals_new = List.fold collect_arg globals arg_names in
-  (globals_new, !stack_left)
+  let globals_new, app_spine =
+    List.fold_left_map collect_arg globals arg_names
+  in
+  let app_root =
+    match list_last_opt app_spine with None -> fun_node | Some addr -> addr
+  in
+
+  (globals_new, !stack_left, app_root)
 
 let heap_alloc ?(addr = None) (heap : heap) node =
   match addr with
@@ -180,6 +198,7 @@ let string_of_node (node : node) =
   | NAp (f, x) -> Printf.sprintf "NAp(%d, %d)" f x
   | NSupercomb (name, _, _) -> name
   | NNum i -> string_of_int i
+  | NInd addr -> Printf.sprintf "&%d" addr
 
 let string_of_state (s : ti_state) =
   let stack_str = s.stack |> List.map string_of_int |> String.concat " " in
@@ -206,16 +225,21 @@ let step (state : ti_state) =
   (*print_string (string_of_state state);*)
   match state.stack with
   | [] -> raise EmptyStack
-  | stack_hd :: stack_rest -> (
-      match BatDynArray.get state.heap stack_hd with
-      | NSupercomb (_, arg_names, body) ->
-          let env, stack_left =
-            get_args arg_names state.heap stack_rest state.globals
-          in
-          let result_addr = instantiate body state.heap env in
-          { state with stack = result_addr :: stack_left }
-      | NAp (f, _) -> { state with stack = f :: stack_hd :: stack_rest }
-      | NNum _ -> raise NumAppliedAsFunc)
+  | stack_hd :: stack_rest ->
+      let rec dispatch addr =
+        match BatDynArray.get state.heap addr with
+        | NSupercomb (_, arg_names, body) ->
+            let env, stack_left, addr_app_root =
+              get_args stack_hd arg_names state.heap stack_rest state.globals
+            in
+            let result_addr = instantiate body state.heap env in
+            BatDynArray.set state.heap addr_app_root (NInd result_addr);
+            { state with stack = result_addr :: stack_left }
+        | NAp (f, _) -> { state with stack = f :: stack_hd :: stack_rest }
+        | NNum _ -> raise NumAppliedAsFunc
+        | NInd addr -> dispatch addr
+      in
+      dispatch stack_hd
 
 let rec eval state =
   if is_final_state state then state else state |> step |> eval
