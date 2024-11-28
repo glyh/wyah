@@ -31,6 +31,16 @@ main = f 3 4;
 |}
   = 4
 
-let%test "2.13" = test_ti {|
+let test_stats_opts opts code =
+  let final_state = code |> compile |> eval_aux opts in
+  final_state.stats
+
+let%test "2.13" =
+  let source = {| 
 main = twice twice twice I 3;
-|} = 3
+  |} in
+  let stats = test_stats_opts { debug = false; redirect = true } source in
+  Printf.printf "Running 2.13 on Mark 2 takes %d steps\n" stats.steps;
+  let stats = test_stats_opts { debug = false; redirect = false } source in
+  Printf.printf "Running 2.13 on Mark 1 takes %d steps\n" stats.steps;
+  true

@@ -21,7 +21,7 @@ type node =
   | NNum of int
   | NInd of addr
 
-type ti_stats = { steps : int }
+type ti_stats = { mutable steps : int }
 type heap = node BatDynArray.t
 
 module StringMap = BatMap.Make (String)
@@ -221,8 +221,11 @@ globals: %s
 |} stack_str
     heap_str globals_str
 
-let step (state : ti_state) =
-  (*print_string (string_of_state state);*)
+type step_options = { debug : bool; redirect : bool }
+
+let step_aux (options : step_options) (state : ti_state) =
+  if options.debug then print_string (string_of_state state);
+  state.stats.steps <- state.stats.steps + 1;
   match state.stack with
   | [] -> raise EmptyStack
   | stack_hd :: stack_rest ->
@@ -233,13 +236,20 @@ let step (state : ti_state) =
               get_args stack_hd arg_names state.heap stack_rest state.globals
             in
             let result_addr = instantiate body state.heap env in
-            BatDynArray.set state.heap addr_app_root (NInd result_addr);
+            if options.redirect then
+              BatDynArray.set state.heap addr_app_root (NInd result_addr);
             { state with stack = result_addr :: stack_left }
         | NAp (f, _) -> { state with stack = f :: stack_hd :: stack_rest }
         | NNum _ -> raise NumAppliedAsFunc
         | NInd addr -> dispatch addr
       in
       dispatch stack_hd
+
+let step = step_aux { debug = false; redirect = true }
+
+let rec eval_aux (options : step_options) state =
+  if is_final_state state then state
+  else state |> step_aux options |> eval_aux options
 
 let rec eval state =
   if is_final_state state then state else state |> step |> eval
