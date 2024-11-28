@@ -1,10 +1,8 @@
 (* templates for all ASTs *)
 
 type name = string
-type prim = Bor | Band | Eq | Ne | Ge | Gt | Le | Lt | Add | Sub | Mul | Div
 
 type 'a _expr =
-  | Prim of prim
   | Var of name (* we can represent free vars *)
   | Num of int
   | Constr of int * int

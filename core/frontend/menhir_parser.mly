@@ -17,7 +17,7 @@
 %left ADD SUB
 %left MUL DIV
 
-%token LETREC LET IN CASE OF PACK
+%token LETREC LET IN CASE PACK
 
 %token FSLASH DOT
 
@@ -45,27 +45,7 @@ supercombinator:
     }
   }
 
-%inline bin_op:
-  | BOR  { fun lhs rhs -> Ap(Ap(Prim Bor , lhs), rhs) }
-  | BAND { fun lhs rhs -> Ap(Ap(Prim Band, lhs), rhs) }
-  | EQ   { fun lhs rhs -> Ap(Ap(Prim Eq  , lhs), rhs) }
-  | NE   { fun lhs rhs -> Ap(Ap(Prim Ne  , lhs), rhs) }
-  | GE   { fun lhs rhs -> Ap(Ap(Prim Ge  , lhs), rhs) }
-  | GT   { fun lhs rhs -> Ap(Ap(Prim Gt  , lhs), rhs) }
-  | LE   { fun lhs rhs -> Ap(Ap(Prim Le  , lhs), rhs) }
-  | LT   { fun lhs rhs -> Ap(Ap(Prim Lt  , lhs), rhs) }
-  | ADD  { fun lhs rhs -> Ap(Ap(Prim Add , lhs), rhs) }
-  | SUB  { fun lhs rhs -> Ap(Ap(Prim Sub , lhs), rhs) }
-  | MUL  { fun lhs rhs -> Ap(Ap(Prim Mul , lhs), rhs) }
-  | DIV  { fun lhs rhs -> Ap(Ap(Prim Div , lhs), rhs) }
-
 expr:
-  | f=expr x=aexpr {
-    Ap(f, x)
-  }
-  | lhs=expr op=bin_op rhs=expr {
-    op lhs rhs
-  }
   | LET bindings=separated_nonempty_list(SEMICOL, defn) IN body=expr {
     Let {
       recursive = false;
@@ -80,7 +60,7 @@ expr:
       body;
     }
   }
-  | CASE condition=expr OF branches=separated_nonempty_list(SEMICOL, alt) {
+  | CASE condition=expr LBRACE branches=nonempty_list(alt) RBRACE {
     Case {
       condition;
       branches;
@@ -91,6 +71,36 @@ expr:
       (fun arg body -> Lam(arg, body))  
       args
       body
+  }
+  | eexpr=eexpr {
+    eexpr
+  }
+
+%inline bin_op:
+  | BOR  { fun lhs rhs -> Ap(Ap(Var "|"  , lhs), rhs) }
+  | BAND { fun lhs rhs -> Ap(Ap(Var "&"  , lhs), rhs) }
+  | EQ   { fun lhs rhs -> Ap(Ap(Var "==" , lhs), rhs) }
+  | NE   { fun lhs rhs -> Ap(Ap(Var "~=" , lhs), rhs) }
+  | GE   { fun lhs rhs -> Ap(Ap(Var ">=" , lhs), rhs) }
+  | GT   { fun lhs rhs -> Ap(Ap(Var ">"  , lhs), rhs) }
+  | LE   { fun lhs rhs -> Ap(Ap(Var "<=" , lhs), rhs) }
+  | LT   { fun lhs rhs -> Ap(Ap(Var "<"  , lhs), rhs) }
+  | ADD  { fun lhs rhs -> Ap(Ap(Var "+"  , lhs), rhs) }
+  | SUB  { fun lhs rhs -> Ap(Ap(Var "-"  , lhs), rhs) }
+  | MUL  { fun lhs rhs -> Ap(Ap(Var "*"  , lhs), rhs) }
+  | DIV  { fun lhs rhs -> Ap(Ap(Var "//" , lhs), rhs) }
+
+eexpr:
+  | lhs=eexpr op=bin_op rhs=eexpr {
+    op lhs rhs
+  }
+  | eexpr2=eexpr2 {
+    eexpr2
+  }
+
+eexpr2:
+  | f=eexpr2 x=aexpr {
+    Ap(f, x)
   }
   | aexpr=aexpr {
     aexpr

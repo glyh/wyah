@@ -12,6 +12,7 @@ exception ArgsNotEnough
 exception UndefinedVariable of string
 
 type addr = int
+type prim = Bor | Band | Eq | Ne | Ge | Gt | Le | Lt | Add | Sub | Mul | Div
 
 type node =
   | NAp of addr * addr
@@ -193,7 +194,6 @@ let rec instantiate ?(addr = None) (body : core_expr) heap (env : env) =
              |> ignore);
       instantiate body heap env_preallocated ~addr
   | Case _ -> raise Unimplemented
-  | Prim _ -> raise Unimplemented
   | Lam _ -> raise Unimplemented
 
 let string_of_node (node : node) =

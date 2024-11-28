@@ -38,7 +38,6 @@ rule next_token = parse
   | "let" { LET }
   | "in" { IN }
   | "case" { CASE }
-  | "of" { OF }
   | "Pack" { PACK }
 
   | "<" { LANG }
