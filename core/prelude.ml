@@ -8,6 +8,7 @@ let prelude =
   S f g x = f x (g x);
   compose f g x = f (g x);
   twice f = compose f f;
+  negate x = 0 - x;
   |}
   |> parse_string
 

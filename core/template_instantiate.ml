@@ -19,6 +19,7 @@ type node =
   | NSupercomb of name * name list * core_expr
   | NNum of int
   | NInd of addr
+  | NPrim of prim
 
 type ti_stats = { mutable steps : int }
 type heap = node BatDynArray.t
@@ -29,49 +30,119 @@ type env = addr StringMap.t
 
 type ti_state = {
   stack : addr list;
-  dump : unit; (* dump is not used for simple template instantiation machine *)
+  dump : addr list list;
   heap : heap;
   globals : env;
   stats : ti_stats;
 }
 
-(* Always put main at address 0 *)
-let init_heap (sc_defs : name definition list) : heap * env =
+let string_of_prim = function
+  | Bor -> "bor"
+  | Band -> "band"
+  | Eq -> "eq"
+  | Ne -> "ne"
+  | Ge -> "ge"
+  | Gt -> "gt"
+  | Le -> "le"
+  | Lt -> "lt"
+  | Add -> "add"
+  | Sub -> "sub"
+  | Mul -> "mul"
+  | Div -> "div"
+
+let string_of_node (node : node) =
+  match node with
+  | NAp (f, x) -> Printf.sprintf "NAp(%d, %d)" f x
+  | NSupercomb (name, _, _) -> name
+  | NNum i -> string_of_int i
+  | NInd addr -> Printf.sprintf "&%d" addr
+  | NPrim p -> "$" ^ string_of_prim p
+
+let string_of_state (s : ti_state) =
+  let stack_to_str s = s |> List.map string_of_int |> String.concat " " in
+  let stack_str = stack_to_str s.stack in
+  let heap_str =
+    s.heap |> BatDynArray.to_list
+    |> List.mapi (fun idx node ->
+           Printf.sprintf "%d:%s" idx (string_of_node node))
+    |> String.concat " "
+  in
+  let globals_str =
+    StringMap.to_seq s.globals
+    |> Seq.map (fun (name, addr) -> Printf.sprintf "%s:%d" name addr)
+    |> Seq.to_string ~sep:" " identity
+  in
+  let dump_str = s.dump |> List.map stack_to_str |> String.concat "\n" in
+
+  Printf.sprintf
+    {|=================
+stack: %s
+heap: %s
+globals: %s
+=================
+DUMP START 
+%s
+DUMP END 
+|}
+    stack_str heap_str globals_str dump_str
+
+let heap_alloc ?(addr = None) (heap : heap) node =
+  match addr with
+  | None ->
+      BatDynArray.add heap node;
+      -1 + BatDynArray.length heap
+  | Some addr ->
+      BatDynArray.set heap addr node;
+      addr
+
+let init_heap_scs (sc_defs : name definition list) : heap * env =
   let heap = BatDynArray.create () in
-  let globals =
-    List.fold_lefti
-      (fun globals idx sc_def ->
+  let env =
+    List.fold_left
+      (fun env sc_def ->
         let { name; args; body } = sc_def in
-        BatDynArray.add heap (NSupercomb (name, args, body));
-        StringMap.add name idx globals)
+        let idx = heap_alloc heap (NSupercomb (name, args, body)) in
+        StringMap.add name idx env)
       StringMap.empty sc_defs
   in
-  (heap, globals)
+  (heap, env)
+
+let init_heap_prims (heap : heap) (env : env) : env =
+  [ ("+", Add); ("-", Sub); ("*", Mul); ("/", Div) ]
+  |> List.fold_left
+       (fun env (sym, prim) ->
+         let idx = heap_alloc heap (NPrim prim) in
+         StringMap.add sym idx env)
+       env
 
 let compile program =
   let parsed = parse_string program in
   let sc_defs = prelude @ extra_prelude @ parsed in
-  let heap, globals = init_heap sc_defs in
+  let heap, globals = init_heap_scs sc_defs in
+  let globals = init_heap_prims heap globals in
   let address_of_main =
     match StringMap.find_opt "main" globals with
     | None -> raise MainUndefined
     | Some addr -> addr
   in
   let stack = [ address_of_main ] in
-  { stack; dump = (); heap; globals; stats = { steps = 0 } }
+  { stack; dump = []; heap; globals; stats = { steps = 0 } }
 
-let rec is_data (heap : heap) (node : node) =
-  match node with
-  | NNum _ -> true
-  | NInd addr -> BatDynArray.get heap addr |> is_data heap
-  | _ -> false
+let rec take_data (heap : heap) (node_addr : addr) =
+  match BatDynArray.get heap node_addr with
+  | NNum i -> Some i
+  | NInd addr -> take_data heap addr
+  | _ -> None
+
+let is_data (heap : heap) (node_addr : addr) =
+  match take_data heap node_addr with Some _ -> true | None -> false
 
 let is_final_state (state : ti_state) =
+  List.is_empty state.dump
+  &&
   match state.stack with
   | [] -> raise EmptyStack
-  | [ addr ] ->
-      let node = BatDynArray.get state.heap addr in
-      is_data state.heap node
+  | [ addr ] -> is_data state.heap addr
   | _ -> false
 
 let rec list_last_opt lst =
@@ -106,15 +177,6 @@ let get_args (fun_node : addr) (arg_names : name list) (heap : heap)
   in
 
   (globals_new, !stack_left, app_root)
-
-let heap_alloc ?(addr = None) (heap : heap) node =
-  match addr with
-  | None ->
-      BatDynArray.add heap node;
-      -1 + BatDynArray.length heap
-  | Some addr ->
-      BatDynArray.set heap addr node;
-      addr
 
 type node_uref = addr option BatUref.t
 
@@ -196,38 +258,62 @@ let rec instantiate ?(addr = None) (body : core_expr) heap (env : env) =
   | Case _ -> raise Unimplemented
   | Lam _ -> raise Unimplemented
 
-let string_of_node (node : node) =
-  match node with
-  | NAp (f, x) -> Printf.sprintf "NAp(%d, %d)" f x
-  | NSupercomb (name, _, _) -> name
-  | NNum i -> string_of_int i
-  | NInd addr -> Printf.sprintf "&%d" addr
+type step_options = { debug_channel : Out_channel.t; redirect : bool }
 
-let string_of_state (s : ti_state) =
-  let stack_str = s.stack |> List.map string_of_int |> String.concat " " in
-  let heap_str =
-    s.heap |> BatDynArray.to_list
-    |> List.mapi (fun idx node ->
-           Printf.sprintf "%d:%s" idx (string_of_node node))
-    |> String.concat " "
+let create_step_options ?(debug_channel = None) ?(redirect = true) () =
+  let debug_channel =
+    match debug_channel with
+    | None -> Out_channel.open_bin "/dev/null"
+    | Some ch -> ch
   in
-  let globals_str =
-    StringMap.to_seq s.globals
-    |> Seq.map (fun (name, addr) -> Printf.sprintf "%s:%d" name addr)
-    |> Seq.to_string ~sep:" " identity
+  { debug_channel; redirect }
+
+let step_binary (state : ti_state) (stack_hd : addr) (stack_rest : addr list)
+    (bop : int -> int -> int) : ti_state =
+  let stack_left = ref stack_rest in
+  let take_arg () =
+    match !stack_left with
+    | [] -> raise ArgsNotEnough
+    | spine_addr :: rest ->
+        let rec dispatch addr =
+          let spine_node = BatDynArray.get state.heap addr in
+          match spine_node with
+          | NAp (_, arg) ->
+              stack_left := rest;
+              arg
+          | NInd addr -> dispatch addr
+          | _ -> raise NonApOnStack
+        in
+        (spine_addr, dispatch spine_addr)
   in
-
-  Printf.sprintf {|=================
-stack: %s
-heap: %s
-globals: %s
-|} stack_str
-    heap_str globals_str
-
-type step_options = { debug : bool; redirect : bool }
+  let _, lhs_node = take_arg () in
+  match take_data state.heap lhs_node with
+  | Some lhs_data -> (
+      let binop_root, rhs_node = take_arg () in
+      match take_data state.heap rhs_node with
+      | Some rhs_data ->
+          let result_addr =
+            heap_alloc state.heap
+              (NNum (bop lhs_data rhs_data))
+              ~addr:(Some binop_root)
+          in
+          { state with stack = result_addr :: !stack_left }
+      | None ->
+          {
+            state with
+            stack = [ rhs_node ];
+            dump = (stack_hd :: stack_rest) :: state.dump;
+          })
+  | None ->
+      {
+        state with
+        stack = [ lhs_node ];
+        dump = (stack_hd :: stack_rest) :: state.dump;
+      }
 
 let step_aux (options : step_options) (state : ti_state) =
-  if options.debug then print_string (string_of_state state);
+  Out_channel.output_string options.debug_channel (string_of_state state);
+  Out_channel.flush options.debug_channel;
   state.stats.steps <- state.stats.steps + 1;
   match state.stack with
   | [] -> raise EmptyStack
@@ -246,16 +332,21 @@ let step_aux (options : step_options) (state : ti_state) =
             in
             { state with stack = result_addr :: stack_left }
         | NAp (f, _) -> { state with stack = f :: stack_hd :: stack_rest }
-        | NNum _ -> raise NumAppliedAsFunc
+        | NNum _ -> (
+            match state.dump with
+            | [] -> raise NumAppliedAsFunc
+            | stack :: dump_rest -> { state with stack; dump = dump_rest })
         | NInd addr -> dispatch addr
+        | NPrim Add -> step_binary state stack_hd stack_rest ( + )
+        | NPrim Sub -> step_binary state stack_hd stack_rest ( - )
+        | NPrim Mul -> step_binary state stack_hd stack_rest ( * )
+        | NPrim Div -> step_binary state stack_hd stack_rest ( / )
+        | NPrim _ -> raise Unimplemented
       in
       dispatch stack_hd
-
-let step = step_aux { debug = false; redirect = true }
 
 let rec eval_aux (options : step_options) state =
   if is_final_state state then state
   else state |> step_aux options |> eval_aux options
 
-let rec eval state =
-  if is_final_state state then state else state |> step |> eval
+let eval state = eval_aux (create_step_options ()) state
