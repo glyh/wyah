@@ -3,16 +3,24 @@ open Core_frontend.Ast
 open Core_frontend.Parser
 open Prelude
 
-exception Unimplemented
-exception MainUndefined
-exception EmptyStack
-exception NumAppliedAsFunc
-exception NonApOnStack
-exception ArgsNotEnough
-exception UndefinedVariable of string
-
 type addr = int
-type prim = Bor | Band | Eq | Ne | Ge | Gt | Le | Lt | Add | Sub | Mul | Div
+
+type prim =
+  | Eq
+  | Ne
+  | Ge
+  | Gt
+  | Le
+  | Lt
+  | Add
+  | Sub
+  | Mul
+  | Div
+  | Constr of { tag : int; arity : int }
+  | If
+  | CasePair
+  | CaseList
+  | Abort
 
 type node =
   | NAp of addr * addr
@@ -20,7 +28,9 @@ type node =
   | NNum of int
   | NInd of addr
   | NPrim of prim
+  | NData of int * addr list
 
+type value = VNum of int | VData of int * value list | VAbort
 type ti_stats = { mutable steps : int }
 type heap = node BatDynArray.t
 
@@ -36,9 +46,17 @@ type ti_state = {
   stats : ti_stats;
 }
 
+exception Unimplemented
+exception MainUndefined
+exception EmptyStack
+exception ValueAppliedAsFunc of node
+exception NonApOnStack
+exception ArgsNotEnough
+exception UndefinedVariable of string
+exception Unreachable of string
+exception Aborted
+
 let string_of_prim = function
-  | Bor -> "bor"
-  | Band -> "band"
   | Eq -> "eq"
   | Ne -> "ne"
   | Ge -> "ge"
@@ -49,6 +67,11 @@ let string_of_prim = function
   | Sub -> "sub"
   | Mul -> "mul"
   | Div -> "div"
+  | Constr { tag; arity } -> Printf.sprintf "con(%d, %d)" tag arity
+  | If -> "if"
+  | CasePair -> "casePair"
+  | CaseList -> "caseList"
+  | Abort -> "abort"
 
 let string_of_node (node : node) =
   match node with
@@ -57,6 +80,9 @@ let string_of_node (node : node) =
   | NNum i -> string_of_int i
   | NInd addr -> Printf.sprintf "&%d" addr
   | NPrim p -> "$" ^ string_of_prim p
+  | NData (tag, children) ->
+      Printf.sprintf "Pack{%d,%d}(%s)" tag (List.length children)
+        (children |> List.map string_of_int |> String.concat ", ")
 
 let string_of_state (s : ti_state) =
   let stack_to_str s = s |> List.map string_of_int |> String.concat " " in
@@ -95,6 +121,14 @@ let heap_alloc ?(addr = None) (heap : heap) node =
       BatDynArray.set heap addr node;
       addr
 
+let rec heap_alloc_val ?(addr = None) (heap : heap) value =
+  match value with
+  | VNum num -> heap_alloc heap (NNum num) ~addr
+  | VData (tag, args) ->
+      let args_alloc = List.map (heap_alloc_val heap) args in
+      heap_alloc heap (NData (tag, args_alloc)) ~addr
+  | VAbort -> heap_alloc heap (NPrim Abort) ~addr
+
 let init_heap_scs (sc_defs : name definition list) : heap * env =
   let heap = BatDynArray.create () in
   let env =
@@ -108,7 +142,22 @@ let init_heap_scs (sc_defs : name definition list) : heap * env =
   (heap, env)
 
 let init_heap_prims (heap : heap) (env : env) : env =
-  [ ("+", Add); ("-", Sub); ("*", Mul); ("/", Div) ]
+  [
+    ("+", Add);
+    ("-", Sub);
+    ("*", Mul);
+    ("/", Div);
+    ("if", If);
+    ("==", Eq);
+    ("!=", Ne);
+    (">=", Ge);
+    (">", Gt);
+    ("<=", Le);
+    ("<", Lt);
+    ("casePair", CasePair);
+    ("caseList", CaseList);
+    ("abort", Abort);
+  ]
   |> List.fold_left
        (fun env (sym, prim) ->
          let idx = heap_alloc heap (NPrim prim) in
@@ -117,7 +166,7 @@ let init_heap_prims (heap : heap) (env : env) : env =
 
 let compile program =
   let parsed = parse_string program in
-  let sc_defs = prelude @ extra_prelude @ parsed in
+  let sc_defs = prelude @ parsed in
   let heap, globals = init_heap_scs sc_defs in
   let globals = init_heap_prims heap globals in
   let address_of_main =
@@ -130,8 +179,31 @@ let compile program =
 
 let rec take_data (heap : heap) (node_addr : addr) =
   match BatDynArray.get heap node_addr with
-  | NNum i -> Some i
+  | NNum i -> Some (VNum i)
+  | NData (tag, args) -> (
+      let args_collected =
+        args
+        |> List.fold_left
+             (fun acc ele ->
+               match acc with
+               | Some lst -> (
+                   match take_data heap ele with
+                   | Some arg -> Some (arg :: lst)
+                   | None -> None)
+               | None -> None)
+             (Some [])
+        |> Option.map List.rev
+      in
+      match args_collected with
+      | None -> None
+      | Some args -> Some (VData (tag, args)))
   | NInd addr -> take_data heap addr
+  | _ -> None
+
+let rec refer_data (heap : heap) (node_addr : addr) =
+  match BatDynArray.get heap node_addr with
+  | (NNum _ | NData _) as nd -> Some nd
+  | NInd addr -> refer_data heap addr
   | _ -> None
 
 let is_data (heap : heap) (node_addr : addr) =
@@ -233,7 +305,7 @@ let rec instantiate ?(addr = None) (body : core_expr) heap (env : env) =
               if addr != addr_already then
                 heap_alloc heap (NInd addr_already) ~addr:(Some addr)
               else addr))
-  | Constr _ -> raise Unimplemented
+  | Constr (tag, arity) -> heap_alloc heap (NPrim (Constr { tag; arity })) ~addr
   | Let { recursive = false; bindings; body } ->
       let env_new =
         bindings
@@ -268,33 +340,33 @@ let create_step_options ?(debug_channel = None) ?(redirect = true) () =
   in
   { debug_channel; redirect }
 
+let take_arg stack_left heap =
+  match !stack_left with
+  | [] -> raise ArgsNotEnough
+  | spine_addr :: rest ->
+      let rec dispatch addr =
+        let spine_node = BatDynArray.get heap addr in
+        match spine_node with
+        | NAp (_, arg) ->
+            stack_left := rest;
+            arg
+        | NInd addr -> dispatch addr
+        | _ -> raise NonApOnStack
+      in
+      (spine_addr, dispatch spine_addr)
+
 let step_binary (state : ti_state) (stack_hd : addr) (stack_rest : addr list)
-    (bop : int -> int -> int) : ti_state =
+    (bop : node -> node -> node) : ti_state =
   let stack_left = ref stack_rest in
-  let take_arg () =
-    match !stack_left with
-    | [] -> raise ArgsNotEnough
-    | spine_addr :: rest ->
-        let rec dispatch addr =
-          let spine_node = BatDynArray.get state.heap addr in
-          match spine_node with
-          | NAp (_, arg) ->
-              stack_left := rest;
-              arg
-          | NInd addr -> dispatch addr
-          | _ -> raise NonApOnStack
-        in
-        (spine_addr, dispatch spine_addr)
-  in
-  let _, lhs_node = take_arg () in
-  match take_data state.heap lhs_node with
-  | Some lhs_data -> (
-      let binop_root, rhs_node = take_arg () in
-      match take_data state.heap rhs_node with
-      | Some rhs_data ->
+  let _, lhs_node = take_arg stack_left state.heap in
+  match refer_data state.heap lhs_node with
+  | Some lhs_node_referred -> (
+      let binop_root, rhs_node = take_arg stack_left state.heap in
+      match refer_data state.heap rhs_node with
+      | Some rhs_node_referred ->
           let result_addr =
             heap_alloc state.heap
-              (NNum (bop lhs_data rhs_data))
+              (bop lhs_node_referred rhs_node_referred)
               ~addr:(Some binop_root)
           in
           { state with stack = result_addr :: !stack_left }
@@ -311,6 +383,128 @@ let step_binary (state : ti_state) (stack_hd : addr) (stack_rest : addr list)
         dump = (stack_hd :: stack_rest) :: state.dump;
       }
 
+let step_constr (state : ti_state) (stack_hd : addr) (stack_rest : addr list)
+    (tag : int) (arity : int) =
+  let stack_left = ref stack_rest in
+  let rec collect_args acc to_collect =
+    match to_collect with
+    | 0 ->
+        (* we must start with 0, i.e. constr with no args *)
+        (stack_hd, [])
+    | 1 ->
+        let spine_node, arg_node = take_arg stack_left state.heap in
+        (spine_node, List.rev (arg_node :: acc))
+    | x ->
+        let _, arg_node = take_arg stack_left state.heap in
+        collect_args (arg_node :: acc) (x - 1)
+  in
+  let override_node, args = collect_args [] arity in
+  let result_addr =
+    heap_alloc state.heap (NData (tag, args)) ~addr:(Some override_node)
+  in
+  { state with stack = result_addr :: !stack_left }
+
+let step_if (state : ti_state) (stack_hd : addr) (stack_rest : addr list) :
+    ti_state =
+  let stack_left = ref stack_rest in
+  let _, cond_node = take_arg stack_left state.heap in
+  match refer_data state.heap cond_node with
+  | Some cond_node_reffered ->
+      let _, then_clause = take_arg stack_left state.heap in
+      let override_node, else_clause = take_arg stack_left state.heap in
+      let body_node =
+        match cond_node_reffered with
+        | NData (2, _) ->
+            heap_alloc state.heap (NInd then_clause) ~addr:(Some override_node)
+        | _ ->
+            heap_alloc state.heap (NInd else_clause) ~addr:(Some override_node)
+      in
+      { state with stack = body_node :: !stack_left }
+  | None ->
+      {
+        state with
+        stack = [ cond_node ];
+        dump = (stack_hd :: stack_rest) :: state.dump;
+      }
+
+let step_sc options (state : ti_state) (stack_hd : addr)
+    (stack_rest : addr list) arg_names body =
+  let env, stack_left, addr_app_root =
+    get_args stack_hd arg_names state.heap stack_rest state.globals
+  in
+  let preset_alloc_dest =
+    if options.redirect then Some addr_app_root else None
+  in
+  let result_addr = instantiate body state.heap env ~addr:preset_alloc_dest in
+  { state with stack = result_addr :: stack_left }
+
+let wrap_arith (op : int -> int -> int) (v1 : node) (v2 : node) =
+  match (v1, v2) with
+  | NNum n1, NNum n2 -> NNum (op n1 n2)
+  | _ -> raise (Unreachable "wrap_arith")
+
+let wrap_order (state : ti_state) (op : int -> int -> bool) (v1 : node)
+    (v2 : node) =
+  match (v1, v2) with
+  | NNum n1, NNum n2 ->
+      let sym_to_refer = if op n1 n2 then "True" else "False" in
+      StringMap.find sym_to_refer state.globals |> BatDynArray.get state.heap
+  | _ -> raise (Unreachable "wrap_arith")
+
+let step_case_pair (state : ti_state) (stack_hd : addr) (stack_rest : addr list)
+    : ti_state =
+  let stack_left = ref stack_rest in
+  let _, pair_node = take_arg stack_left state.heap in
+  match refer_data state.heap pair_node with
+  | Some (NData (1, [ fst_of_pair; snd_of_pair ])) ->
+      let override_node, applied_fn = take_arg stack_left state.heap in
+      let ap_node_inner =
+        heap_alloc state.heap (NAp (applied_fn, fst_of_pair))
+      in
+      let ap_node =
+        heap_alloc state.heap
+          (NAp (ap_node_inner, snd_of_pair))
+          ~addr:(Some override_node)
+      in
+
+      { state with stack = ap_node :: !stack_left }
+  | _ ->
+      {
+        state with
+        stack = [ pair_node ];
+        dump = (stack_hd :: stack_rest) :: state.dump;
+      }
+
+let step_case_list (state : ti_state) (stack_hd : addr) (stack_rest : addr list)
+    : ti_state =
+  let stack_left = ref stack_rest in
+  let _, list_node = take_arg stack_left state.heap in
+  match refer_data state.heap list_node with
+  | Some (NData (1, [])) ->
+      let _, term_empty = take_arg stack_left state.heap in
+      let override_node, _ = take_arg stack_left state.heap in
+      let output =
+        heap_alloc state.heap (NInd term_empty) ~addr:(Some override_node)
+      in
+      { state with stack = output :: !stack_left }
+  | Some (NData (2, [ x; xs ])) ->
+      let _, _ = take_arg stack_left state.heap in
+      let override_node, applied_fn = take_arg stack_left state.heap in
+      let ap_node_inner = heap_alloc state.heap (NAp (applied_fn, x)) in
+      let ap_node =
+        heap_alloc state.heap
+          (NAp (ap_node_inner, xs))
+          ~addr:(Some override_node)
+      in
+
+      { state with stack = ap_node :: !stack_left }
+  | _ ->
+      {
+        state with
+        stack = [ list_node ];
+        dump = (stack_hd :: stack_rest) :: state.dump;
+      }
+
 let step_aux (options : step_options) (state : ti_state) =
   Out_channel.output_string options.debug_channel (string_of_state state);
   Out_channel.flush options.debug_channel;
@@ -321,27 +515,39 @@ let step_aux (options : step_options) (state : ti_state) =
       let rec dispatch addr =
         match BatDynArray.get state.heap addr with
         | NSupercomb (_, arg_names, body) ->
-            let env, stack_left, addr_app_root =
-              get_args stack_hd arg_names state.heap stack_rest state.globals
-            in
-            let preset_alloc_dest =
-              if options.redirect then Some addr_app_root else None
-            in
-            let result_addr =
-              instantiate body state.heap env ~addr:preset_alloc_dest
-            in
-            { state with stack = result_addr :: stack_left }
+            step_sc options state stack_hd stack_rest arg_names body
         | NAp (f, _) -> { state with stack = f :: stack_hd :: stack_rest }
-        | NNum _ -> (
+        | (NNum _ | NData _) as node -> (
             match state.dump with
-            | [] -> raise NumAppliedAsFunc
+            | [] -> raise (ValueAppliedAsFunc node)
             | stack :: dump_rest -> { state with stack; dump = dump_rest })
         | NInd addr -> dispatch addr
-        | NPrim Add -> step_binary state stack_hd stack_rest ( + )
-        | NPrim Sub -> step_binary state stack_hd stack_rest ( - )
-        | NPrim Mul -> step_binary state stack_hd stack_rest ( * )
-        | NPrim Div -> step_binary state stack_hd stack_rest ( / )
-        | NPrim _ -> raise Unimplemented
+        | NPrim Add ->
+            step_binary state stack_hd stack_rest (( + ) |> wrap_arith)
+        | NPrim Sub ->
+            step_binary state stack_hd stack_rest (( - ) |> wrap_arith)
+        | NPrim Mul ->
+            step_binary state stack_hd stack_rest (( * ) |> wrap_arith)
+        | NPrim Div ->
+            step_binary state stack_hd stack_rest (( / ) |> wrap_arith)
+        | NPrim Eq ->
+            step_binary state stack_hd stack_rest (( = ) |> wrap_order state)
+        | NPrim Ne ->
+            step_binary state stack_hd stack_rest (( != ) |> wrap_order state)
+        | NPrim Ge ->
+            step_binary state stack_hd stack_rest (( >= ) |> wrap_order state)
+        | NPrim Gt ->
+            step_binary state stack_hd stack_rest (( > ) |> wrap_order state)
+        | NPrim Le ->
+            step_binary state stack_hd stack_rest (( <= ) |> wrap_order state)
+        | NPrim Lt ->
+            step_binary state stack_hd stack_rest (( < ) |> wrap_order state)
+        | NPrim (Constr { tag; arity }) ->
+            step_constr state stack_hd stack_rest tag arity
+        | NPrim If -> step_if state stack_hd stack_rest
+        | NPrim CasePair -> step_case_pair state stack_hd stack_rest
+        | NPrim CaseList -> step_case_list state stack_hd stack_rest
+        | NPrim Abort -> raise Aborted
       in
       dispatch stack_hd
 

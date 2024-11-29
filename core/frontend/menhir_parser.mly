@@ -8,11 +8,14 @@
 
 %token <int> INT
 
-%token BOR BAND EQ NE GE GT LE LT
+%token BOR BAND
+%token CONS
+%token EQ NE GE GT LE LT
 %token ADD SUB MUL DIV
 
 %left BOR
 %left BAND
+%right CONS
 %left EQ NE GE GT LE LT
 %left ADD SUB
 %left MUL DIV
@@ -77,8 +80,8 @@ expr:
   }
 
 %inline bin_op:
-  | BOR  { fun lhs rhs -> Ap(Ap(Var "|"  , lhs), rhs) }
-  | BAND { fun lhs rhs -> Ap(Ap(Var "&"  , lhs), rhs) }
+  | BOR  { fun lhs rhs -> Ap(Ap(Var "or"  , lhs), rhs) }
+  | BAND { fun lhs rhs -> Ap(Ap(Var "and"  , lhs), rhs) }
   | EQ   { fun lhs rhs -> Ap(Ap(Var "==" , lhs), rhs) }
   | NE   { fun lhs rhs -> Ap(Ap(Var "~=" , lhs), rhs) }
   | GE   { fun lhs rhs -> Ap(Ap(Var ">=" , lhs), rhs) }
@@ -89,6 +92,7 @@ expr:
   | SUB  { fun lhs rhs -> Ap(Ap(Var "-"  , lhs), rhs) }
   | MUL  { fun lhs rhs -> Ap(Ap(Var "*"  , lhs), rhs) }
   | DIV  { fun lhs rhs -> Ap(Ap(Var "//" , lhs), rhs) }
+  | CONS  { fun lhs rhs -> Ap(Ap(Var "Cons" , lhs), rhs) }
 
 eexpr:
   | lhs=eexpr op=bin_op rhs=eexpr {

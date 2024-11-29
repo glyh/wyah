@@ -12,7 +12,7 @@
 (* regular expressions *)
 let WS = [ ' ' '\t' ]
 let newline = "\r\n" | '\r' | '\n'
-let id = ['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
+let id = ['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']* "'"*
 
 let int_lit = '-'? ('0' | ['1'-'9']['0'-'9']*)
 let char_lit = "'" (_ # ['\'' '\\']) "'" | "'\\" ['\'' '\\'] "'"
@@ -20,6 +20,7 @@ let char_lit = "'" (_ # ['\'' '\\']) "'" | "'\\" ['\'' '\\'] "'"
 rule next_token = parse
   | eof { EOF }
 
+  | "::" { CONS }
   | "==" { EQ }
   | "~=" { NE }
   | ">=" { GE }
