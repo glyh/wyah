@@ -1,5 +1,5 @@
 (library
- (name core)
+ (name template_instantiate)
  (inline_tests)
  (libraries batteries core_frontend)
  (preprocess (pps ppx_inline_test)))
