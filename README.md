@@ -15,7 +15,7 @@ However, studying the underlying mechanics of a Haskell compiler is still valuab
 ```sh
 git clone https://github.com/glyh/wyah
 cd wyah
-opam switch create . --deps-only --with-test -y
+opam switch create . 5.3.0 --deps-only --with-test -y
 ```
 - For developing, you may want to have LSP and other stuffs available
 ```sh

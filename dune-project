@@ -22,7 +22,7 @@
  (synopsis "Write You a Haskell implemented in OCaml")
  (description "Write You a Haskell implemented in OCaml")
  (depends
-   ocaml
+   (ocaml (>= 5.3.0)) 
    dune
    menhir
    (nice_parser (>= 1.0.0))
